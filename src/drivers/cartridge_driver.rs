@@ -1,9 +1,10 @@
 //Taken from https://github.com/starrhorne/chip8-rust/blob/master/src/drivers/cartridge_driver.rs
 use std::fs::File;
 use std::io::prelude::*;
+use crate::Program;
 
 pub struct CartridgeDriver {
-    pub rom: [u8; crate::CHIP8_PROGRAM_SIZE],
+    pub rom: Program,
     pub size: usize,
 }
 
