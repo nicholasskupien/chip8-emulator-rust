@@ -1,5 +1,6 @@
 //instead of crate:: use chip8_emulator_rust:: only in main.rs
 use chip8_emulator_rust::{CHIP8_SCREEN_HEIGHT,CHIP8_SCREEN_WIDTH, CHIP8_START_OF_PROGRAM, drivers::CartridgeDriver, processor::Processor, Program};
+use std::{time, thread};
 
 struct video {
    screen: [[bool; CHIP8_SCREEN_WIDTH]; CHIP8_SCREEN_HEIGHT],
@@ -14,17 +15,11 @@ fn main() {
    processor.print_file(program_size);
    // print_file(program, program_size);
 
-}
-
-fn print_file(program: chip8_emulator_rust::Program, program_size: usize){
-   let mut pc = 0;
-
-   while(pc < program_size){
-      let opcode = (program[pc] as u16) << 8 | (program[pc + 1]) as u16;
-      print!("{:04x} ", opcode);
-      if((pc/2 + 1) % 8 == 0) {
-         println!("");
-      }
-      pc += 2;
+   loop{
+      processor.cycle();
+      thread::sleep(time::Duration::from_millis(1000));
    }
+
 }
+
+
