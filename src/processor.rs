@@ -1,4 +1,4 @@
-
+use rand::{Rng};
 
 pub struct Processor {
     ram: [u8; crate::CHIP8_RAM_SIZE_BYTES],
@@ -39,6 +39,10 @@ impl Processor {
     }
 
     pub fn cycle(&mut self){
+        clearscreen::clear().expect("failed to clear screen");
+
+        self.display();
+
         let mut pc_advance = true;
         self.opcode = self.read_opcode();
 
@@ -55,7 +59,7 @@ impl Processor {
             ((self.opcode & (0x000F) as u16)) as u8
             );
 
-        dbg!(nibbles);
+        // dbg!(nibbles);
 
         //_*** First nibble of opcode
         //*X**
@@ -109,6 +113,7 @@ impl Processor {
             (0x2, _, _, _) => {
                 self.stack[self.stack_ptr as usize] = self.pc;
                 self.stack_ptr = self.stack_ptr + 1;
+                self.pc = nnn;
                 pc_advance = false;
 
             },
@@ -240,18 +245,28 @@ impl Processor {
             // Bnnn - JP V0, addr
             // Jump to location nnn + V0.
             (0xB, _, _, _) => {
-
+                self.pc = self.reg[0] as u16 + nnn;
+                pc_advance = false;
             },
 
             // Cxkk - RND Vx, byte
             // Set Vx = random byte AND kk.
             // The interpreter generates a random number from 0 to 255, which is then ANDed with the value kk. The results are stored in Vx
             (0xC, _, _, _) => {
+                let random: u8 = rand::thread_rng().gen();
+                self.reg[x as usize] = random & nn;
             },
 
             // Dxyn - DRW Vx, Vy, nibble
             // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
             (0xD, _, _, _) => {
+                for row in 0..n as usize {
+                    let mut vram_row = &mut self.vram[x as usize + row][y as usize .. (y+8) as usize];
+                    let sprite_row = self.ram[self.reg_index as usize + row];
+                    for col in 0..8 as usize {
+                        vram_row[col] = vram_row[col] ^ ((sprite_row & (0x80 >> col)) != 0);
+                    }
+                }
             },
 
             // Ex9E - SKP Vx
@@ -287,11 +302,13 @@ impl Processor {
             // Fx1E - ADD I, Vx
             // Set I = I + Vx.
             (0xF, _, 0x1, 0xE) => {
+                self.reg_index = self.reg_index + self.reg[x as usize] as u16;
             },
 
             // Fx29 - LD F, Vx
             // Set I = location of sprite for digit Vx.
             (0xF, _, 0x2, 0x9) => {
+
             },
 
             // Fx33 - LD B, Vx
@@ -317,6 +334,7 @@ impl Processor {
         if(pc_advance){
             self.pc += 2;
         }
+
     }
 
     // debug
@@ -330,6 +348,22 @@ impl Processor {
                 println!("");
             }
             pc += 2;
+        }
+    }
+
+    pub fn display(&self){
+        // println!("{:#?}", self.vram);
+        for row in 0..crate::CHIP8_SCREEN_WIDTH{
+            for col in 0..crate::CHIP8_SCREEN_HEIGHT{
+                if self.vram[col][row] == true{
+                    print!("*");
+                }
+                else{
+                    print!("_");
+                }
+            }
+            print!("\n");
+
         }
     }
 }

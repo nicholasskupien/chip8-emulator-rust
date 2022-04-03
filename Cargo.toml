@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 #ux = "0.1.4"
+rand = "0.3"
+clearscreen = "1.0.9"

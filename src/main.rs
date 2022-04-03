@@ -7,7 +7,7 @@ struct video {
 }
 
 fn main() {
-   let cartridge_driver = CartridgeDriver::new("C:/Users/Nick Skupien/Documents/GitHub/chip8-emulator-rust/src/roms/BLITZ");
+   let cartridge_driver = CartridgeDriver::new("./roms/BLITZ");
    let program_size = cartridge_driver.size;
    let program = cartridge_driver.rom;
    let mut processor = Processor::new();
