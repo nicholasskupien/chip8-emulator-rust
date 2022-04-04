@@ -30,6 +30,11 @@ impl Processor {
     // Need program data, length of data, program start
     pub fn load(&mut self, program: crate::Program, program_size: usize, program_start: usize){
         self.ram[program_start..(program_start+program_size)].copy_from_slice(&program[0..program_size]);
+
+        for i in 0..crate::FONT_SET.len() {
+            self.ram[i] = crate::FONT_SET[i];
+        }
+
         self.pc = program_start as u16;
     }
 
@@ -105,6 +110,7 @@ impl Processor {
             // Jump to address NNN
             (0x1, _, _, _) => {
                 self.pc = nnn;
+                println!("Setting program counter to: {}", nnn);
                 pc_advance = false;
             },
 
@@ -151,7 +157,7 @@ impl Processor {
             // 7xNN: ADD Vx, byte
             // Add NN to Vx (don't set carry flag)
             (0x7, _, _, _) => {
-                self.reg[x as usize] = self.reg[x as usize] + nn;
+                self.reg[x as usize] = (self.reg[x as usize] as u16 + nn as u16) as u8;
             },
 
             // 8xy0: LD Vx, Vy
@@ -260,13 +266,21 @@ impl Processor {
             // Dxyn - DRW Vx, Vy, nibble
             // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
             (0xD, _, _, _) => {
+                let reg_x = self.reg[x as usize] as usize;
+                let reg_y = self.reg[y as usize] as usize;
+                self.reg[0xF] = 0x0;
                 for row in 0..n as usize {
-                    let mut vram_row = &mut self.vram[x as usize + row][y as usize .. (y+8) as usize];
+                    let mut vram_row = &mut self.vram[reg_y + row];
                     let sprite_row = self.ram[self.reg_index as usize + row];
                     for col in 0..8 as usize {
-                        vram_row[col] = vram_row[col] ^ ((sprite_row & (0x80 >> col)) != 0);
+                        // if vram_row[col + x as usize]
+                        vram_row[col + reg_x] = vram_row[col + reg_x] ^ ((sprite_row & (0x80 >> col)) != 0);
+                        print!("{}",col + reg_x);
                     }
+                    println!("");
                 }
+
+                //need flag when display bit flip
             },
 
             // Ex9E - SKP Vx
@@ -308,6 +322,8 @@ impl Processor {
             // Fx29 - LD F, Vx
             // Set I = location of sprite for digit Vx.
             (0xF, _, 0x2, 0x9) => {
+                // fonts stored starting at ram[0] and each font takes 5 bytes of memory
+                self.reg_index = self.ram[self.reg[x as usize] as usize * 5] as u16;
 
             },
 
@@ -353,9 +369,9 @@ impl Processor {
 
     pub fn display(&self){
         // println!("{:#?}", self.vram);
-        for row in 0..crate::CHIP8_SCREEN_WIDTH{
-            for col in 0..crate::CHIP8_SCREEN_HEIGHT{
-                if self.vram[col][row] == true{
+        for row in 0..crate::CHIP8_SCREEN_HEIGHT{
+            for col in 0..crate::CHIP8_SCREEN_WIDTH{
+                if self.vram[row][col] == true{
                     print!("*");
                 }
                 else{
