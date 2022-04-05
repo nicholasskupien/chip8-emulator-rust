@@ -10,6 +10,10 @@ pub struct Processor {
     reg: [u8; 16],
     stack: [u16; 16],
     stack_ptr: u8,
+    keypad_irq: bool,
+    keypad_irq_dest: u8,
+    delay_timer: u8,
+    sound_timer: u8,
 }
 
 impl Processor {
@@ -23,6 +27,10 @@ impl Processor {
             reg: [0u8; 16],
             stack: [0u16; 16],
             stack_ptr: 0,
+            keypad_irq: false,
+            keypad_irq_dest: 0,
+            delay_timer: 0,
+            sound_timer: 0,
         }
     }
 
@@ -43,7 +51,28 @@ impl Processor {
         return (self.ram[self.pc as usize] as u16) << 8 | (self.ram[self.pc as usize + 1]) as u16;
     }
 
-    pub fn cycle(&mut self){
+    pub fn cycle(&mut self, keypad: [bool; 16]){
+
+        // Keypad Interrupt
+        if self.keypad_irq == true {
+            for k in 0..keypad.len(){
+                if keypad[k] == true {
+                    self.reg[self.keypad_irq_dest as usize] = k as u8;
+                    self.keypad_irq = false;
+                }
+            }
+            return;
+        }
+
+        // Delay & Sound Timers (TODO Move this to its own thread)
+        if self.delay_timer > 0{
+            self.delay_timer -= 1;
+        }
+
+        if self.sound_timer > 0{
+            self.sound_timer -= 1;
+        }
+
         clearscreen::clear().expect("failed to clear screen");
 
         self.display();
@@ -286,31 +315,42 @@ impl Processor {
             // Ex9E - SKP Vx
             // Skip next instruction if key with the value of Vx is pressed.
             (0xE, _, 0x9, 0xE) => {
+                if keypad[x as usize] == true {
+                    self.pc += 2;
+                }
             },
 
             // ExA1 - SKNP Vx
             // Skip next instruction if key with the value of Vx is not pressed.
             (0xE, _, 0xA, 0x1) => {
+                if keypad[x as usize] == false {
+                    self.pc += 2;
+                }
             },
 
             // Fx07 - LD Vx, DT
             // Set Vx = delay timer value.
             (0xF, _, 0x0, 0x7) => {
+                self.reg[x as usize] = self.delay_timer;
             },
 
             // Fx0A - LD Vx, K
             // Stop execution, wait for a key press, store the value of the key in Vx.
             (0xF, _, 0x0, 0xA) => {
+                self.keypad_irq = true;
+                self.keypad_irq_dest = x;
             },
 
             // Fx15 - LD DT, Vx
             // Set delay timer = Vx.
             (0xF, _, 0x1, 0x5) => {
+                self.delay_timer = self.reg[x as usize];
             },
 
             // Fx18 - LD ST, Vx
             // Set sound timer = Vx.
             (0xF, _, 0x1, 0x8) => {
+                self.sound_timer = self.reg[x as usize];
             },
 
             // Fx1E - ADD I, Vx
@@ -335,11 +375,17 @@ impl Processor {
             // Fx55 - LD [I], Vx
             // Store registers V0 through Vx in memory starting at location I.
             (0xF, _, 0x5, 0x5) => {
+                for r in 0..16{
+                    self.ram[self.reg_index as usize + r] = self.reg[r];
+                }
             },
 
             // Fx65 - LD Vx, [I]
             // Read registers V0 through Vx from memory starting at location I.
             (0xF, _, 0x6, 0x5) => {
+                for r in 0..16{
+                    self.reg[r] = self.ram[self.reg_index as usize + r];
+                }
             },
 
             _ => {

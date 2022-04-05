@@ -10,6 +10,7 @@ pub mod drivers;
 pub mod processor;
 
 use drivers::CartridgeDriver;
+use drivers::InputDriver;
 
 
 pub type Program = [u8; crate::CHIP8_PROGRAM_SIZE];

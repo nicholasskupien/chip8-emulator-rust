@@ -1,5 +1,5 @@
 //instead of crate:: use chip8_emulator_rust:: only in main.rs
-use chip8_emulator_rust::{CHIP8_SCREEN_HEIGHT,CHIP8_SCREEN_WIDTH, CHIP8_START_OF_PROGRAM, drivers::CartridgeDriver, processor::Processor, Program};
+use chip8_emulator_rust::{CHIP8_SCREEN_HEIGHT,CHIP8_SCREEN_WIDTH, CHIP8_START_OF_PROGRAM, drivers::CartridgeDriver, drivers::InputDriver, processor::Processor, Program};
 use std::{time, thread};
 
 struct video {
@@ -7,7 +7,11 @@ struct video {
 }
 
 fn main() {
+   let sdl_context = sdl2::init().unwrap();
+
    let cartridge_driver = CartridgeDriver::new("./roms/BLITZ");
+   let mut input_driver = InputDriver::new(&sdl_context);
+
    let program_size = cartridge_driver.size;
    let program = cartridge_driver.rom;
    let mut processor = Processor::new();
@@ -16,7 +20,8 @@ fn main() {
    // print_file(program, program_size);
 
    loop{
-      processor.cycle();
+      let keypad = input_driver.poll().expect("Error retrieving input");
+      processor.cycle(keypad);
       thread::sleep(time::Duration::from_millis(200));
    }
 
