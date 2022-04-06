@@ -1,4 +1,5 @@
 use rand::{Rng};
+use crate::{CHIP8_SCREEN_WIDTH, CHIP8_SCREEN_HEIGHT};
 
 pub struct Processor {
     ram: [u8; crate::CHIP8_RAM_SIZE_BYTES],
@@ -14,6 +15,8 @@ pub struct Processor {
     keypad_irq_dest: u8,
     delay_timer: u8,
     sound_timer: u8,
+    debug: bool,
+    breakpoint: bool
 }
 
 impl Processor {
@@ -31,6 +34,8 @@ impl Processor {
             keypad_irq_dest: 0,
             delay_timer: 0,
             sound_timer: 0,
+            debug: false,
+            breakpoint: true,
         }
     }
 
@@ -51,7 +56,11 @@ impl Processor {
         return (self.ram[self.pc as usize] as u16) << 8 | (self.ram[self.pc as usize + 1]) as u16;
     }
 
-    pub fn cycle(&mut self, keypad: [bool; 16]){
+    pub fn set_debug(&mut self, debug: bool){
+        self.debug = debug;
+    }
+
+    pub fn cycle(&mut self, keypad: [bool; 16]) -> [[bool; crate::CHIP8_SCREEN_WIDTH]; crate::CHIP8_SCREEN_HEIGHT]{
 
         // Keypad Interrupt
         if self.keypad_irq == true {
@@ -61,7 +70,20 @@ impl Processor {
                     self.keypad_irq = false;
                 }
             }
-            return;
+            return self.vram;
+        }
+
+        if self.debug == true{
+            //break at every instruction
+            if self.breakpoint == true {
+                for k in 0..keypad.len() {
+                    if keypad[k] == true {
+                        self.breakpoint = false;
+                    }
+                }
+                return self.vram;
+            }
+
         }
 
         // Delay & Sound Timers (TODO Move this to its own thread)
@@ -74,6 +96,24 @@ impl Processor {
         }
 
         clearscreen::clear().expect("failed to clear screen");
+
+        if self.debug == true {
+            //print registers
+            for r in 0..self.reg.len(){
+                println!("V{:X} = {:2X}", r, self.reg[r]);
+            }
+
+            println!("I = {:2X}", self.reg_index);
+
+            println!("PC = {:2X}", self.pc);
+
+            println!("SP = {:2X}", self.stack_ptr);
+
+            for s in 0..self.stack.len(){
+                println!("S{:X} = {:2X}", s, self.stack[s]);
+            }
+
+        }
 
         self.display();
 
@@ -120,8 +160,10 @@ impl Processor {
             // return from subroutine (return)
             (0x0, 0x0, 0xE, 0xE) => {
                 if self.stack_ptr > 0 {
+                    self.pc = self.stack[self.stack_ptr as usize - 1];
+                    //unnessesary but good for debugging
+                    self.stack[self.stack_ptr as usize - 1] = 0;
                     self.stack_ptr = self.stack_ptr - 1;
-                    self.pc = self.stack[self.stack_ptr as usize];
                 }
                 else {
                     println!("EXECUTE: return: {:04x} ERROR no address to return to", self.opcode);
@@ -146,8 +188,8 @@ impl Processor {
             // 2NNN: CALL addr
             // Call subroutine at NNN (goto NNN;)
             (0x2, _, _, _) => {
-                self.stack[self.stack_ptr as usize] = self.pc;
                 self.stack_ptr = self.stack_ptr + 1;
+                self.stack[self.stack_ptr as usize - 1] = self.pc;
                 self.pc = nnn;
                 pc_advance = false;
 
@@ -299,11 +341,13 @@ impl Processor {
                 let reg_y = self.reg[y as usize] as usize;
                 self.reg[0xF] = 0x0;
                 for row in 0..n as usize {
-                    let mut vram_row = &mut self.vram[reg_y + row];
+                    let y_index = (reg_y + row) % CHIP8_SCREEN_HEIGHT;
+                    let mut vram_row = &mut self.vram[y_index];
                     let sprite_row = self.ram[self.reg_index as usize + row];
                     for col in 0..8 as usize {
                         // if vram_row[col + x as usize]
-                        vram_row[col + reg_x] = vram_row[col + reg_x] ^ ((sprite_row & (0x80 >> col)) != 0);
+                        let x_index = (col + reg_x) % CHIP8_SCREEN_WIDTH;
+                        vram_row[x_index] = vram_row[x_index] ^ ((sprite_row & (0x80 >> col)) != 0);
                         print!("{}",col + reg_x);
                     }
                     println!("");
@@ -397,6 +441,8 @@ impl Processor {
             self.pc += 2;
         }
 
+        self.breakpoint = true;
+        return self.vram;
     }
 
     // debug
