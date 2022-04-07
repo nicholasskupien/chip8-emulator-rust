@@ -17,7 +17,7 @@ fn main() {
    let program_size = cartridge_driver.size;
    let program = cartridge_driver.rom;
    let mut processor = Processor::new();
-   processor.set_debug(true);
+   // processor.set_debug(true);
    processor.load(program, program_size, CHIP8_START_OF_PROGRAM);
    processor.print_file(program_size);
    // print_file(program, program_size);
@@ -28,7 +28,7 @@ fn main() {
 
       display_driver.draw(&vram);
 
-      thread::sleep(time::Duration::from_millis(100));
+      thread::sleep(time::Duration::from_millis(25));
    }
 
 }

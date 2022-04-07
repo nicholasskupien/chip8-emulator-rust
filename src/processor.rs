@@ -274,7 +274,7 @@ impl Processor {
             (0x8, _, _, 0x5) => {
                 let result = self.reg[x as usize].wrapping_sub(self.reg[y as usize]);
 
-                let mut not_borrow = self.reg[x as usize] > self.reg[y as usize];
+                let mut not_borrow = self.reg[x as usize] >= self.reg[y as usize];
 
                 self.reg[0xF] = not_borrow as u8;
                 self.reg[x as usize] = result;
@@ -292,7 +292,7 @@ impl Processor {
             (0x8, _, _, 0x7) => {
                 let result = self.reg[y as usize].wrapping_sub(self.reg[x as usize]);
 
-                let mut not_borrow = self.reg[y as usize] > self.reg[x as usize];
+                let mut not_borrow = self.reg[y as usize] >= self.reg[x as usize];
 
                 self.reg[0xF] = not_borrow as u8;
                 self.reg[x as usize] = result;
@@ -330,7 +330,7 @@ impl Processor {
             // Set Vx = random byte AND kk.
             // The interpreter generates a random number from 0 to 255, which is then ANDed with the value kk. The results are stored in Vx
             (0xC, _, _, _) => {
-                let random: u8 = rand::thread_rng().gen();
+                let random: u8 = rand::thread_rng().gen::<u8>();
                 self.reg[x as usize] = random & nn;
             },
 
