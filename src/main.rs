@@ -9,7 +9,7 @@ struct video {
 fn main() {
    let sdl_context = sdl2::init().unwrap();
 
-   let cartridge_driver = CartridgeDriver::new("./roms/test_opcode.ch8");
+   let cartridge_driver = CartridgeDriver::new("./roms/BLITZ");
    let mut input_driver = InputDriver::new(&sdl_context);
    let mut display_driver = DisplayDriver::new(&sdl_context);
 

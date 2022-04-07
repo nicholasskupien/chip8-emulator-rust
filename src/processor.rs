@@ -52,8 +52,8 @@ impl Processor {
     }
 
     // Get opcode at current program counter
-    pub fn read_opcode(&mut self) -> u16{
-        return (self.ram[self.pc as usize] as u16) << 8 | (self.ram[self.pc as usize + 1]) as u16;
+    pub fn read_opcode(&self, pc: u16) -> u16{
+        return (self.ram[pc as usize] as u16) << 8 | (self.ram[pc as usize + 1]) as u16;
     }
 
     pub fn set_debug(&mut self, debug: bool){
@@ -97,7 +97,7 @@ impl Processor {
 
         clearscreen::clear().expect("failed to clear screen");
 
-        if self.debug == true {
+        if true {
             //print registers
             for r in 0..self.reg.len(){
                 println!("V{:X} = {:2X}", r, self.reg[r]);
@@ -118,12 +118,14 @@ impl Processor {
         self.display();
 
         let mut pc_advance = true;
-        self.opcode = self.read_opcode();
+        self.opcode = self.read_opcode(self.pc);
 
         // defining some variables to help with processing
         // the naming is based on opcode definition
 
-        println!("FETCH: {:04x}", self.opcode);
+        print!("FETCH: {:04x}", self.opcode);
+
+        println!("");
 
         // just put all the nibbles in a tuple
         let nibbles = (
@@ -168,7 +170,7 @@ impl Processor {
                 else {
                     println!("EXECUTE: return: {:04x} ERROR no address to return to", self.opcode);
                 }
-                pc_advance = false;
+                // pc_advance = false;
             },
 
             // 0NNN: SYS addr
@@ -270,13 +272,12 @@ impl Processor {
             // 8xy5: SUB Vx, Vy
             // Vx = Vx - Vy, Set VF (last register) if borrow does NOT occur (true false)
             (0x8, _, _, 0x5) => {
-                let result = self.reg[x as usize] as i16 - self.reg[y as usize] as i16;
-                let mut not_borrow = true;
-                if (result < 0){
-                    not_borrow = false;
-                }
+                let result = self.reg[x as usize].wrapping_sub(self.reg[y as usize]);
+
+                let mut not_borrow = self.reg[x as usize] > self.reg[y as usize];
+
                 self.reg[0xF] = not_borrow as u8;
-                self.reg[x as usize] = result as u8;
+                self.reg[x as usize] = result;
             },
 
             // 8xy6: SHR Vx {, Vy}
@@ -289,20 +290,19 @@ impl Processor {
             // 8xy7: SUBN Vx, Vy
             // Vx = Vy - Vx, set VF = NOT borrow.
             (0x8, _, _, 0x7) => {
-                let result = self.reg[y as usize] as i16 - self.reg[x as usize] as i16;
-                let mut not_borrow = true;
-                if (result < 0){
-                    not_borrow = false;
-                }
+                let result = self.reg[y as usize].wrapping_sub(self.reg[x as usize]);
+
+                let mut not_borrow = self.reg[y as usize] > self.reg[x as usize];
+
                 self.reg[0xF] = not_borrow as u8;
-                self.reg[x as usize] = result as u8;
+                self.reg[x as usize] = result;
             },
 
             // 8xyE: SHR Vx {, Vy}
             // Vx = Vx << 1, Set VF to MSB of Vx (0101 = 1011 >> 1, VF = 1)
             (0x8, _, _, 0xE) => {
                 self.reg[0xF] = self.reg[x as usize] >> 7;
-                self.reg[x as usize] = self.reg[x as usize] >> 1;
+                self.reg[x as usize] = self.reg[x as usize] << 1;
             },
 
             // 9xy0 - SNE Vx, Vy
@@ -339,18 +339,26 @@ impl Processor {
             (0xD, _, _, _) => {
                 let reg_x = self.reg[x as usize] as usize;
                 let reg_y = self.reg[y as usize] as usize;
+
                 self.reg[0xF] = 0x0;
+
                 for row in 0..n as usize {
                     let y_index = (reg_y + row) % CHIP8_SCREEN_HEIGHT;
+
                     let mut vram_row = &mut self.vram[y_index];
                     let sprite_row = self.ram[self.reg_index as usize + row];
+
                     for col in 0..8 as usize {
-                        // if vram_row[col + x as usize]
                         let x_index = (col + reg_x) % CHIP8_SCREEN_WIDTH;
+                        let previous_pixel = vram_row[x_index];
+
                         vram_row[x_index] = vram_row[x_index] ^ ((sprite_row & (0x80 >> col)) != 0);
-                        print!("{}",col + reg_x);
+
+                        // if the previous pixel was 1 and was replaced with a 0 there is collision
+                        if previous_pixel == true && vram_row[x_index] == false{
+                            self.reg[0xF]  = 0x1;
+                        }
                     }
-                    println!("");
                 }
 
                 //need flag when display bit flip
@@ -400,26 +408,30 @@ impl Processor {
             // Fx1E - ADD I, Vx
             // Set I = I + Vx.
             (0xF, _, 0x1, 0xE) => {
-                self.reg_index = self.reg_index + self.reg[x as usize] as u16;
+                self.reg_index = (self.reg_index as u32 + self.reg[x as usize] as u32) as u16;
             },
 
             // Fx29 - LD F, Vx
             // Set I = location of sprite for digit Vx.
             (0xF, _, 0x2, 0x9) => {
                 // fonts stored starting at ram[0] and each font takes 5 bytes of memory
-                self.reg_index = self.ram[self.reg[x as usize] as usize * 5] as u16;
+                self.reg_index = (self.reg[x as usize] * 5) as u16;
 
             },
 
             // Fx33 - LD B, Vx
             // Store BCD representation of Vx in memory locations I, I+1, and I+2.
             (0xF, _, 0x3, 0x3) => {
+                self.ram[self.reg_index as usize] = self.reg[x as usize] / 100;
+                self.ram[self.reg_index as usize + 1] = (self.reg[x as usize] % 100) / 10;
+                self.ram[self.reg_index as usize + 2] = self.reg[x as usize] % 10;
             },
 
             // Fx55 - LD [I], Vx
             // Store registers V0 through Vx in memory starting at location I.
             (0xF, _, 0x5, 0x5) => {
-                for r in 0..16{
+                let range = x as usize + 1;
+                for r in 0..range{
                     self.ram[self.reg_index as usize + r] = self.reg[r];
                 }
             },
@@ -427,7 +439,8 @@ impl Processor {
             // Fx65 - LD Vx, [I]
             // Read registers V0 through Vx from memory starting at location I.
             (0xF, _, 0x6, 0x5) => {
-                for r in 0..16{
+                let range = x as usize + 1;
+                for r in 0..range{
                     self.reg[r] = self.ram[self.reg_index as usize + r];
                 }
             },
