@@ -3,6 +3,7 @@ use crate::{CHIP8_SCREEN_WIDTH, CHIP8_SCREEN_HEIGHT};
 
 pub struct Processor {
     ram: [u8; crate::CHIP8_RAM_SIZE_BYTES],
+    program_size: usize,
     vram: [[bool; crate::CHIP8_SCREEN_WIDTH]; crate::CHIP8_SCREEN_HEIGHT],
     // pc would have been u12 but to index easier in rust it needs to be usize
     pc: u16,
@@ -15,7 +16,7 @@ pub struct Processor {
     keypad_irq_dest: u8,
     delay_timer: u8,
     sound_timer: u8,
-    debug: bool,
+    debug: usize,
     breakpoint: bool
 }
 
@@ -23,6 +24,7 @@ impl Processor {
     pub fn new() -> Self{
         Self {
             ram: [0u8; crate::CHIP8_RAM_SIZE_BYTES],
+            program_size: 0,
             vram: [[false; crate::CHIP8_SCREEN_WIDTH]; crate::CHIP8_SCREEN_HEIGHT],
             pc: 0,
             reg_index: 0,
@@ -34,7 +36,7 @@ impl Processor {
             keypad_irq_dest: 0,
             delay_timer: 0,
             sound_timer: 0,
-            debug: false,
+            debug: 0,
             breakpoint: true,
         }
     }
@@ -43,6 +45,7 @@ impl Processor {
     // Need program data, length of data, program start
     pub fn load(&mut self, program: crate::Program, program_size: usize, program_start: usize){
         self.ram[program_start..(program_start+program_size)].copy_from_slice(&program[0..program_size]);
+        self.program_size = program_size;
 
         for i in 0..crate::FONT_SET.len() {
             self.ram[i] = crate::FONT_SET[i];
@@ -56,7 +59,7 @@ impl Processor {
         return (self.ram[pc as usize] as u16) << 8 | (self.ram[pc as usize + 1]) as u16;
     }
 
-    pub fn set_debug(&mut self, debug: bool){
+    pub fn set_debug(&mut self, debug: usize){
         self.debug = debug;
     }
 
@@ -73,7 +76,7 @@ impl Processor {
             return self.vram;
         }
 
-        if self.debug == true{
+        if self.debug == 3{
             //break at every instruction
             if self.breakpoint == true {
                 for k in 0..keypad.len() {
@@ -95,9 +98,13 @@ impl Processor {
             self.sound_timer -= 1;
         }
 
-        clearscreen::clear().expect("failed to clear screen");
 
-        if true {
+        if self.debug > 1 {
+
+            clearscreen::clear().expect("failed to clear screen");
+
+            println!("OP: {:04x}", self.opcode);
+
             //print registers
             for r in 0..self.reg.len(){
                 println!("V{:X} = {:2X}", r, self.reg[r]);
@@ -113,19 +120,19 @@ impl Processor {
                 println!("S{:X} = {:2X}", s, self.stack[s]);
             }
 
-        }
+            self.display();
 
-        self.display();
+        }
+        else if self.debug == 1 {
+            clearscreen::clear().expect("failed to clear screen");
+            self.print_file(self.program_size);
+        }
 
         let mut pc_advance = true;
         self.opcode = self.read_opcode(self.pc);
 
         // defining some variables to help with processing
         // the naming is based on opcode definition
-
-        print!("FETCH: {:04x}", self.opcode);
-
-        println!("");
 
         // just put all the nibbles in a tuple
         let nibbles = (
@@ -183,7 +190,7 @@ impl Processor {
             // Jump to address NNN
             (0x1, _, _, _) => {
                 self.pc = nnn;
-                println!("Setting program counter to: {}", nnn);
+                // println!("Setting program counter to: {}", nnn);
                 pc_advance = false;
             },
 
@@ -336,20 +343,30 @@ impl Processor {
 
             // Dxyn - DRW Vx, Vy, nibble
             // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
+            // Sprites shouldn't wrap they should clip! Only the position wraps https://www.reddit.com/r/EmuDev/comments/gft7r9/another_beginner_post_for_clarification_for_my/
             (0xD, _, _, _) => {
-                let reg_x = self.reg[x as usize] as usize;
-                let reg_y = self.reg[y as usize] as usize;
+                let reg_x = self.reg[x as usize] as usize % CHIP8_SCREEN_WIDTH;
+                let reg_y = self.reg[y as usize] as usize % CHIP8_SCREEN_HEIGHT;
 
                 self.reg[0xF] = 0x0;
 
                 for row in 0..n as usize {
-                    let y_index = (reg_y + row) % CHIP8_SCREEN_HEIGHT;
+                    let y_index = (reg_y + row);
+
+                    if y_index >= CHIP8_SCREEN_HEIGHT{
+                        break;
+                    }
 
                     let mut vram_row = &mut self.vram[y_index];
                     let sprite_row = self.ram[self.reg_index as usize + row];
 
                     for col in 0..8 as usize {
-                        let x_index = (col + reg_x) % CHIP8_SCREEN_WIDTH;
+                        let x_index = (col + reg_x);
+
+                        if x_index >= CHIP8_SCREEN_WIDTH{
+                            break;
+                        }
+
                         let previous_pixel = vram_row[x_index];
 
                         vram_row[x_index] = vram_row[x_index] ^ ((sprite_row & (0x80 >> col)) != 0);
@@ -367,7 +384,7 @@ impl Processor {
             // Ex9E - SKP Vx
             // Skip next instruction if key with the value of Vx is pressed.
             (0xE, _, 0x9, 0xE) => {
-                if keypad[x as usize] == true {
+                if keypad[self.reg[x as usize] as usize] == true {
                     self.pc += 2;
                 }
             },
@@ -375,7 +392,7 @@ impl Processor {
             // ExA1 - SKNP Vx
             // Skip next instruction if key with the value of Vx is not pressed.
             (0xE, _, 0xA, 0x1) => {
-                if keypad[x as usize] == false {
+                if keypad[self.reg[x as usize] as usize] == false {
                     self.pc += 2;
                 }
             },
@@ -464,7 +481,12 @@ impl Processor {
 
         while (pc < (program_size as u16 +self.pc)) {
             let opcode = (self.ram[pc as usize] as u16) << 8 | (self.ram[pc as usize + 1]) as u16;
-            print!("{:04x} ", opcode);
+            if(opcode != self.opcode) {
+                print!("{:04x} ", opcode);
+            }
+            else{
+                print!("<{:04x}> ", opcode);
+            }
             if ((pc / 2 + 1) % 8 == 0) {
                 println!("");
             }

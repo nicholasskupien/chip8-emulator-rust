@@ -7,7 +7,7 @@ use sdl2::video::Window;
 use crate::CHIP8_SCREEN_WIDTH;
 use crate::CHIP8_SCREEN_HEIGHT;
 
-const SCALE_FACTOR: u32 = 20;
+const SCALE_FACTOR: u32 = 7;
 const SCREEN_WIDTH: u32 = (CHIP8_SCREEN_WIDTH as u32) * SCALE_FACTOR;
 const SCREEN_HEIGHT: u32 = (CHIP8_SCREEN_HEIGHT as u32) * SCALE_FACTOR;
 
@@ -31,7 +31,7 @@ impl DisplayDriver {
 
         let mut canvas = window.into_canvas().build().unwrap();
 
-        canvas.set_draw_color(pixels::Color::RGB(0, 0, 0));
+        canvas.set_draw_color(pixels::Color::RGB(100, 100, 100));
         canvas.clear();
         canvas.present();
 
@@ -55,8 +55,8 @@ impl DisplayDriver {
 
 fn color(value: u8) -> pixels::Color {
     if value == 0 {
-        pixels::Color::RGB(0, 0, 0)
+        pixels::Color::RGB(150, 210, 150)
     } else {
-        pixels::Color::RGB(0, 250, 0)
+        pixels::Color::RGB(30, 40, 30)
     }
 }

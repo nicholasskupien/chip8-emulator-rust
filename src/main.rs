@@ -9,7 +9,7 @@ struct video {
 fn main() {
    let sdl_context = sdl2::init().unwrap();
 
-   let cartridge_driver = CartridgeDriver::new("./roms/BLITZ");
+   let cartridge_driver = CartridgeDriver::new("./roms/TANK");
    let mut input_driver = InputDriver::new(&sdl_context);
    let mut display_driver = DisplayDriver::new(&sdl_context);
 
@@ -17,10 +17,10 @@ fn main() {
    let program_size = cartridge_driver.size;
    let program = cartridge_driver.rom;
    let mut processor = Processor::new();
-   // processor.set_debug(true);
+   processor.set_debug(0);
    processor.load(program, program_size, CHIP8_START_OF_PROGRAM);
    processor.print_file(program_size);
-   // print_file(program, program_size);
+   // pri
 
    loop{
       let keypad = input_driver.poll().expect("Error retrieving input");
@@ -28,7 +28,7 @@ fn main() {
 
       display_driver.draw(&vram);
 
-      thread::sleep(time::Duration::from_millis(25));
+      // thread::sleep(time::Duration::from_millis(2));
    }
 
 }
