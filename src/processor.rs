@@ -1,5 +1,9 @@
+use std::sync::Arc;
 use rand::{Rng};
 use crate::{CHIP8_SCREEN_WIDTH, CHIP8_SCREEN_HEIGHT};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::thread;
+use std::thread::JoinHandle;
 
 pub struct Processor {
     ram: [u8; crate::CHIP8_RAM_SIZE_BYTES],
@@ -14,10 +18,11 @@ pub struct Processor {
     stack_ptr: u8,
     keypad_irq: bool,
     keypad_irq_dest: u8,
-    delay_timer: u8,
-    sound_timer: u8,
+    delay_timer: AtomicU8,
+    sound_timer: AtomicU8,
     debug: usize,
-    breakpoint: bool
+    breakpoint: bool,
+    thread: JoinHandle<()>,
 }
 
 impl Processor {
@@ -34,10 +39,11 @@ impl Processor {
             stack_ptr: 0,
             keypad_irq: false,
             keypad_irq_dest: 0,
-            delay_timer: 0,
-            sound_timer: 0,
+            delay_timer: AtomicU8::new(0),
+            sound_timer: AtomicU8::new(0),
             debug: 0,
             breakpoint: true,
+            thread: thread::spawn(||{}),
         }
     }
 
@@ -61,6 +67,51 @@ impl Processor {
 
     pub fn set_debug(&mut self, debug: usize){
         self.debug = debug;
+    }
+
+    // Spawn thread for timers
+    // pub fn start_processor(&mut self) {
+    //     delay_timer = AtomicU8::clone(&self.delay_timer);
+    //     sound_timer = AtomicU8::clone(&self.sound_timer);
+    //     self.thread = thread::spawn(move ||{
+    //         loop{
+    //             delay_timer.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x|{
+    //                 if x > 0 {
+    //                     Some(x - 1)
+    //                 }
+    //                 else{
+    //                     Some(x)
+    //                 }
+    //             });
+    //             sound_timer.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x|{
+    //                 if x > 0 {
+    //                     Some(x - 1)
+    //                 }
+    //                 else{
+    //                     Some(x)
+    //                 }
+    //             });
+    //         }
+    //     })
+    // }
+
+    pub fn cycle_timers(&mut self) {
+        delay_timer.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x|{
+            if x > 0 {
+                Some(x - 1)
+            }
+            else{
+                Some(x)
+            }
+        });
+        sound_timer.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |x|{
+            if x > 0 {
+                Some(x - 1)
+            }
+            else{
+                Some(x)
+            }
+        });
     }
 
     pub fn cycle(&mut self, keypad: [bool; 16]) -> [[bool; crate::CHIP8_SCREEN_WIDTH]; crate::CHIP8_SCREEN_HEIGHT]{
@@ -90,13 +141,13 @@ impl Processor {
         }
 
         // Delay & Sound Timers (TODO Move this to its own thread)
-        if self.delay_timer > 0{
-            self.delay_timer -= 1;
-        }
-
-        if self.sound_timer > 0{
-            self.sound_timer -= 1;
-        }
+        // if self.delay_timer > 0{
+        //     self.delay_timer -= 1;
+        // }
+        //
+        // if self.sound_timer > 0{
+        //     self.sound_timer -= 1;
+        // }
 
 
         if self.debug > 1 {
@@ -125,7 +176,7 @@ impl Processor {
         }
         else if self.debug == 1 {
             clearscreen::clear().expect("failed to clear screen");
-            self.print_file(self.program_size);
+            // self.print_file(self.program_size);
         }
 
         let mut pc_advance = true;
@@ -139,7 +190,7 @@ impl Processor {
             ((self.opcode & 0xF000) >> 12) as u8,
             ((self.opcode & 0x0F00) >> 8) as u8,
             ((self.opcode & 0x00F0) >> 4) as u8,
-            ((self.opcode & (0x000F) as u16)) as u8
+            (self.opcode & (0x000F) as u16) as u8
             );
 
         // dbg!(nibbles);
@@ -148,7 +199,7 @@ impl Processor {
         //*X**
         //**Y*
         //***N
-        let (nibble, x, y, n) = nibbles;
+        let (_nibble, x, y, n) = nibbles;
 
         //*NNN
         let nnn = self.opcode & 0x0FFF;
@@ -170,7 +221,7 @@ impl Processor {
             (0x0, 0x0, 0xE, 0xE) => {
                 if self.stack_ptr > 0 {
                     self.pc = self.stack[self.stack_ptr as usize - 1];
-                    //unnessesary but good for debugging
+                    //unnecessary but good for debugging
                     self.stack[self.stack_ptr as usize - 1] = 0;
                     self.stack_ptr = self.stack_ptr - 1;
                 }
@@ -269,7 +320,7 @@ impl Processor {
             (0x8, _, _, 0x4) => {
                 let result = self.reg[x as usize] as u16 + self.reg[y as usize] as u16;
                 let mut carry = false;
-                if (result > 255){
+                if result > 255{
                     carry = true;
                 }
                 self.reg[0xF] = carry as u8;
@@ -400,7 +451,7 @@ impl Processor {
             // Fx07 - LD Vx, DT
             // Set Vx = delay timer value.
             (0xF, _, 0x0, 0x7) => {
-                self.reg[x as usize] = self.delay_timer;
+                self.reg[x as usize] = self.delay_timer.load(Ordering::Relaxed);
             },
 
             // Fx0A - LD Vx, K
@@ -413,13 +464,13 @@ impl Processor {
             // Fx15 - LD DT, Vx
             // Set delay timer = Vx.
             (0xF, _, 0x1, 0x5) => {
-                self.delay_timer = self.reg[x as usize];
+                self.delay_timer.store(self.reg[x as usize], Ordering::Relaxed);
             },
 
             // Fx18 - LD ST, Vx
             // Set sound timer = Vx.
             (0xF, _, 0x1, 0x8) => {
-                self.sound_timer = self.reg[x as usize];
+                self.sound_timer.store(self.reg[x as usize], Ordering::Relaxed);
             },
 
             // Fx1E - ADD I, Vx
@@ -467,7 +518,7 @@ impl Processor {
             }
         }
 
-        if(pc_advance){
+        if pc_advance{
             self.pc += 2;
         }
 
@@ -479,16 +530,16 @@ impl Processor {
     pub fn print_file(&self, program_size: usize) {
         let mut pc = self.pc;
 
-        while (pc < (program_size as u16 +self.pc)) {
+        while pc < (program_size as u16 +self.pc) {
             let opcode = (self.ram[pc as usize] as u16) << 8 | (self.ram[pc as usize + 1]) as u16;
-            if(opcode != self.opcode) {
+            if opcode != self.opcode {
                 print!("{:04x} ", opcode);
             }
             else{
                 print!("<{:04x}> ", opcode);
             }
-            if ((pc / 2 + 1) % 8 == 0) {
-                println!("");
+            if (pc / 2 + 1) % 8 == 0 {
+                println!();
             }
             pc += 2;
         }
