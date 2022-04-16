@@ -1,3 +1,5 @@
+use std::{thread, time};
+use std::time::Instant;
 use rand::{Rng};
 use crate::{CHIP8_SCREEN_WIDTH, CHIP8_SCREEN_HEIGHT};
 
@@ -17,7 +19,9 @@ pub struct Processor {
     delay_timer: u8,
     sound_timer: u8,
     debug: usize,
-    breakpoint: bool
+    breakpoint: bool,
+    last_time: Instant,
+    timer_decrement: f64,
 }
 
 impl Processor {
@@ -38,6 +42,8 @@ impl Processor {
             sound_timer: 0,
             debug: 0,
             breakpoint: true,
+            last_time: Instant::now(),
+            timer_decrement: 0 as f64,
         }
     }
 
@@ -64,6 +70,26 @@ impl Processor {
     }
 
     pub fn cycle(&mut self, keypad: [bool; 16]) -> [[bool; crate::CHIP8_SCREEN_WIDTH]; crate::CHIP8_SCREEN_HEIGHT]{
+
+
+        let duration = self.last_time.elapsed().as_millis() as f64;
+
+        //decrement timers by 60Hz spec
+        self.timer_decrement += ((duration/1000 as f64) * 60 as f64);
+
+        if self.timer_decrement > 1 as f64{
+            let delay_timer: i16 = self.delay_timer as i16 - self.timer_decrement.floor() as i16;
+            let sound_timer: i16 = self.sound_timer as i16 - self.timer_decrement.floor() as i16;
+
+            self.delay_timer = if delay_timer < 0 {0} else {delay_timer as u8};
+            self.sound_timer = if sound_timer < 0 {0} else {sound_timer as u8};
+        }
+
+        self.timer_decrement -= self.timer_decrement.floor();
+
+
+
+        self.last_time = Instant::now();
 
         // Keypad Interrupt
         if self.keypad_irq == true {
@@ -98,11 +124,12 @@ impl Processor {
             self.sound_timer -= 1;
         }
 
-
-        if self.debug > 1 {
-
+        if self.debug > 0{
             clearscreen::clear().expect("failed to clear screen");
+        }
 
+
+        if self.debug == 1 {
             println!("OP: {:04x}", self.opcode);
 
             //print registers
@@ -114,18 +141,21 @@ impl Processor {
 
             println!("PC = {:2X}", self.pc);
 
-            println!("SP = {:2X}", self.stack_ptr);
+            println!("\nDT = {}", self.delay_timer);
+            println!("ST = {}", self.sound_timer);
+
+            println!("\nSP = {:2X}", self.stack_ptr);
 
             for s in 0..self.stack.len(){
                 println!("S{:X} = {:2X}", s, self.stack[s]);
             }
-
-            self.display();
+            //keep everything on the screen for a bit
+            thread::sleep(time::Duration::from_millis(150));
 
         }
-        else if self.debug == 1 {
-            clearscreen::clear().expect("failed to clear screen");
-            self.print_file(self.program_size);
+
+        else if self.debug > 1 {
+            self.display();
         }
 
         let mut pc_advance = true;

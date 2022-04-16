@@ -17,7 +17,7 @@ fn main() {
    let program_size = cartridge_driver.size;
    let program = cartridge_driver.rom;
    let mut processor = Processor::new();
-   processor.set_debug(0);
+   processor.set_debug(1);
    processor.load(program, program_size, CHIP8_START_OF_PROGRAM);
    processor.print_file(program_size);
    // pri
